@@ -12,6 +12,7 @@ BLACKHOLE_DIRS = os.environ.get('BLACKHOLE_DIRS', '/blackhole').split(',')
 OFFCLOUD_API_KEY = os.environ.get('OFFCLOUD_API_KEY')
 OFFCLOUD_STORAGE = os.environ.get('OFFCLOUD_STORAGE', 'cloud').lower()
 OFFCLOUD_API_URL = f'https://offcloud.com/api/{OFFCLOUD_STORAGE}'
+POLL_INTERVAL = int(os.environ.get('POLL_INTERVAL', '10'))
 
 
 def send_to_offcloud(magnet):
@@ -64,7 +65,7 @@ def watch():
                             logging.error(f'Error processing {filepath}: {e}')
             except Exception as e:
                 logging.error(f'Error watching {blackhole_dir}: {e}')
-        time.sleep(10)
+        time.sleep(POLL_INTERVAL)
 
 
 if __name__ == '__main__':
