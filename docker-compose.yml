@@ -1,7 +1,6 @@
 services:
   offcloudarr:
-    image: offcloudarr:latest
-    pull_policy: never
+    image: supergraham/offcloudarr:latest
     container_name: offcloudarr
     environment:
       - TZ=UTC
