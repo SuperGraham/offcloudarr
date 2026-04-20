@@ -7,6 +7,7 @@ services:
       - OFFCLOUD_API_KEY=YOUR_OFFCLOUD_API_KEY
       - OFFCLOUD_STORAGE=cloud
       - BLACKHOLE_DIRS=/sonarr-blackhole,/radarr-blackhole
+      - POLL_INTERVAL=10
     volumes:
       - /opt/docker/sonarr/blackhole:/sonarr-blackhole
       - /opt/docker/radarr/blackhole:/radarr-blackhole
