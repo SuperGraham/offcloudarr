@@ -78,8 +78,6 @@ services:
       - /opt/docker/sonarr/blackhole:/sonarr-blackhole
       - /opt/docker/radarr/blackhole:/radarr-blackhole
     restart: unless-stopped
-    labels:
-      - com.centurylinklabs.watchtower.enable=true
 ```
 
 ## Environment Variables
