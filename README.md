@@ -87,7 +87,7 @@ services:
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `OFFCLOUD_API_KEY` | Yes | — | Your Offcloud API key |
-| `OFFCLOUD_STORAGE` | No | `cloud` | Storage destination: `cloud` for Offcloud cloud storage, `remote` for remote storage (e.g. Google Drive).  Using `remote` is currently supported, I am waiting for Offcloud to add this to their API so leave this variable configured as `cloud` |
+| `OFFCLOUD_STORAGE` | No | `cloud` | Storage destination: `cloud` for Offcloud cloud storage, `remote` for remote storage (e.g. Google Drive).  Using `remote` is currently not supported, I am waiting for Offcloud to add this to their API so leave this variable configured as `cloud` |
 | `BLACKHOLE_DIRS` | No | `/blackhole` | Comma-separated list of blackhole directories to watch.  For example `BLACKHOLE_DIRS=/sonarr-blackhole,/radarr-blackhole` |
 | `TZ` | No | UTC | Timezone for log timestamps |
 
