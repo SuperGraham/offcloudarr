@@ -59,6 +59,7 @@ services:
   offcloudarr:
     image: supergraham/offcloudarr:latest
     container_name: offcloudarr
+    restart: unless-stopped
     environment:
       - TZ=UTC
       - OFFCLOUD_API_KEY=YOUR_OFFCLOUD_API_KEY
@@ -68,7 +69,6 @@ services:
     volumes:
       - /opt/docker/sonarr/blackhole:/sonarr-blackhole
       - /opt/docker/radarr/blackhole:/radarr-blackhole
-    restart: unless-stopped
 ```
 
 ## Environment Variables
