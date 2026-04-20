@@ -1,0 +1,14 @@
+services:
+  offcloudarr:
+    image: offcloudarr:latest
+    pull_policy: never
+    container_name: offcloudarr
+    environment:
+      - TZ=UTC
+      - OFFCLOUD_API_KEY=YOUR_OFFCLOUD_API_KEY
+      - OFFCLOUD_STORAGE=cloud
+      - BLACKHOLE_DIRS=/sonarr-blackhole,/radarr-blackhole
+    volumes:
+      - /opt/docker/sonarr/blackhole:/sonarr-blackhole
+      - /opt/docker/radarr/blackhole:/radarr-blackhole
+    restart: unless-stopped
