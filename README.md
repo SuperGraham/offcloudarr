@@ -50,24 +50,14 @@ volumes:
   - /opt/docker/radarr/downloads:/downloads
 ```
 
-### 3. Build the Docker image
-
-```bash
-mkdir -p /opt/docker/offcloudarr
-cd /opt/docker/offcloudarr
-git clone https://github.com/SuperGraham/offcloudarr.git .
-docker build -t offcloudarr:latest .
-```
-
-### 4. Deploy
+### 3. Deploy
 
 Use the following compose file as a Portainer stack or with `docker compose up -d`:
 
 ```yaml
 services:
   offcloudarr:
-    image: offcloudarr:latest
-    pull_policy: never
+    image: supergraham/offcloudarr:latest
     container_name: offcloudarr
     environment:
       - TZ=UTC
@@ -85,18 +75,16 @@ services:
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `OFFCLOUD_API_KEY` | Yes | — | Your Offcloud API key |
-| `OFFCLOUD_STORAGE` | No | `cloud` | Storage destination: `cloud` for Offcloud cloud storage, `remote` for remote storage (e.g. Google Drive).  Using `remote` is currently not supported, I am waiting for Offcloud to add this to their API so leave this variable configured as `cloud` |
-| `BLACKHOLE_DIRS` | No | `/blackhole` | Comma-separated list of blackhole directories to watch.  For example `BLACKHOLE_DIRS=/sonarr-blackhole,/radarr-blackhole` |
+| `OFFCLOUD_STORAGE` | No | `cloud` | Storage destination: `cloud` for Offcloud cloud storage, `remote` for remote storage (e.g. Google Drive). Using `remote` is currently not supported — leave this configured as `cloud` until Offcloud adds more options to their API |
+| `BLACKHOLE_DIRS` | No | `/blackhole` | Comma-separated list of blackhole directories to watch. For example `BLACKHOLE_DIRS=/sonarr-blackhole,/radarr-blackhole` |
 | `TZ` | No | UTC | Timezone for log timestamps |
 
 ## Updating
 
-Since the image is built locally, rebuild after pulling changes:
+Pull the latest image and redeploy the stack:
 
 ```bash
-cd /opt/docker/offcloudarr
-git pull
-docker build --no-cache -t offcloudarr:latest .
+docker pull supergraham/offcloudarr:latest
 ```
 
 Then redeploy the stack.
