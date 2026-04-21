@@ -4,6 +4,8 @@ import hashlib
 import requests
 import logging
 import bencodepy
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 logging.basicConfig(
     level=logging.INFO,
@@ -16,6 +18,7 @@ OFFCLOUD_STORAGE = os.environ.get('OFFCLOUD_STORAGE', 'cloud').lower()
 OFFCLOUD_API_URL = f'https://offcloud.com/api/{OFFCLOUD_STORAGE}'
 OFFCLOUD_HISTORY_URL = 'https://offcloud.com/api/cloud/history'
 POLL_INTERVAL = int(os.environ.get('POLL_INTERVAL', '10'))
+HEALTH_PORT = int(os.environ.get('HEALTH_PORT', '8080'))
 
 HEADERS = {
     'Authorization': f'Bearer {OFFCLOUD_API_KEY}',
@@ -24,6 +27,26 @@ HEADERS = {
 
 # In-memory cache of hashes sent in this session
 sent_hashes = set()
+
+
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == '/health':
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b'OK')
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def log_message(self, format, *args):
+        pass  # Suppress HTTP access logs
+
+
+def start_health_server():
+    server = HTTPServer(('0.0.0.0', HEALTH_PORT), HealthHandler)
+    logging.info(f'Health check endpoint started on port {HEALTH_PORT}')
+    server.serve_forever()
 
 
 def get_offcloud_history():
@@ -164,4 +187,9 @@ def watch():
 if __name__ == '__main__':
     if not OFFCLOUD_API_KEY:
         raise RuntimeError('OFFCLOUD_API_KEY environment variable is not set')
+
+    # Start health check server in background thread
+    health_thread = threading.Thread(target=start_health_server, daemon=True)
+    health_thread.start()
+
     watch()
