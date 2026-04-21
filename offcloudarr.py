@@ -14,7 +14,43 @@ BLACKHOLE_DIRS = os.environ.get('BLACKHOLE_DIRS', '/blackhole').split(',')
 OFFCLOUD_API_KEY = os.environ.get('OFFCLOUD_API_KEY')
 OFFCLOUD_STORAGE = os.environ.get('OFFCLOUD_STORAGE', 'cloud').lower()
 OFFCLOUD_API_URL = f'https://offcloud.com/api/{OFFCLOUD_STORAGE}'
+OFFCLOUD_HISTORY_URL = 'https://offcloud.com/api/cloud/history'
 POLL_INTERVAL = int(os.environ.get('POLL_INTERVAL', '10'))
+
+HEADERS = {
+    'Authorization': f'Bearer {OFFCLOUD_API_KEY}',
+    'Content-Type': 'application/json'
+}
+
+
+def get_offcloud_history():
+    response = requests.get(OFFCLOUD_HISTORY_URL, headers=HEADERS)
+    response.raise_for_status()
+    return response.json()
+
+
+def extract_info_hash_from_magnet(magnet):
+    for part in magnet.split('&'):
+        if part.startswith('magnet:?xt=urn:btih:') or part.startswith('xt=urn:btih:'):
+            return part.split(':')[-1].lower()
+    return None
+
+
+def is_duplicate(magnet):
+    try:
+        hash_to_check = extract_info_hash_from_magnet(magnet)
+        if not hash_to_check:
+            return False
+        history = get_offcloud_history()
+        for item in history:
+            existing_link = item.get('originalLink', '')
+            existing_hash = extract_info_hash_from_magnet(existing_link)
+            if existing_hash and existing_hash.lower() == hash_to_check.lower():
+                logging.warning(f'Duplicate detected — already in Offcloud: {item.get("fileName", "")}')
+                return True
+    except Exception as e:
+        logging.error(f'Error checking Offcloud history: {e}')
+    return False
 
 
 def torrent_to_magnet(filepath):
@@ -32,10 +68,7 @@ def torrent_to_magnet(filepath):
 def send_to_offcloud(magnet):
     response = requests.post(
         OFFCLOUD_API_URL,
-        headers={
-            'Authorization': f'Bearer {OFFCLOUD_API_KEY}',
-            'Content-Type': 'application/json'
-        },
+        headers=HEADERS,
         json={'url': magnet}
     )
     response.raise_for_status()
@@ -50,6 +83,11 @@ def process_magnet_file(filepath):
         logging.warning(f'Skipping {filepath} - does not contain a magnet link')
         return
 
+    if is_duplicate(magnet):
+        logging.warning(f'Skipping duplicate: {filepath}')
+        move_to_processed(filepath)
+        return
+
     logging.info(f'Sending to Offcloud: {filepath}')
     result = send_to_offcloud(magnet)
     logging.info(f'Offcloud response: {result}')
@@ -60,6 +98,12 @@ def process_torrent_file(filepath):
     logging.info(f'Converting torrent to magnet: {filepath}')
     magnet = torrent_to_magnet(filepath)
     logging.info(f'Magnet: {magnet}')
+
+    if is_duplicate(magnet):
+        logging.warning(f'Skipping duplicate: {filepath}')
+        move_to_processed(filepath)
+        return
+
     logging.info(f'Sending to Offcloud: {filepath}')
     result = send_to_offcloud(magnet)
     logging.info(f'Offcloud response: {result}')
