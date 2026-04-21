@@ -7,8 +7,9 @@ A lightweight Docker container that watches blackhole folders used by Sonarr and
 1. Sonarr or Radarr grabs a release and writes a `.magnet` or `.torrent` file to a blackhole folder
 2. Offcloudarr detects the file within 10 seconds by default (configurable via `POLL_INTERVAL`)
 3. The magnet link is sent to Offcloud via its API (`.torrent` files are automatically converted to magnet links)
-4. The file is moved to a `processed/` subfolder
-5. Offcloud downloads the content to your storage
+4. Duplicate detection checks both the current session and Offcloud history to avoid sending the same file twice
+5. The file is moved to a `processed/` subfolder
+6. Offcloud downloads the content to your storage
 
 ## Prerequisites
 
@@ -68,8 +69,20 @@ services:
     volumes:
       - /opt/docker/sonarr/blackhole:/sonarr-blackhole
       - /opt/docker/radarr/blackhole:/radarr-blackhole
+    ports:
+      - 6771:6771
     restart: unless-stopped
 ```
+
+## Web UI
+
+Offcloudarr includes a built-in web UI available at `http://<host>:6771` showing:
+
+- Activity log — what was sent, duplicates skipped, and errors
+- Session stats — sent count, duplicates, errors, and uptime
+- Configuration — storage type, poll interval, blackhole directories
+
+The `/health` endpoint at `http://<host>:6771/health` is used by Docker for container health monitoring.
 
 ## Environment Variables
 
