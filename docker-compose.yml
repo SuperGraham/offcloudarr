@@ -2,13 +2,18 @@ services:
   offcloudarr:
     image: supergraham/offcloudarr:latest
     container_name: offcloudarr
-    restart: unless-stopped
     environment:
-      - TZ=UTC
+      - TZ=Asia/Riyadh
       - OFFCLOUD_API_KEY=YOUR_OFFCLOUD_API_KEY
       - OFFCLOUD_STORAGE=cloud
-      - BLACKHOLE_DIRS=/sonarr-blackhole,/radarr-blackhole
       - POLL_INTERVAL=10
+      - BLACKHOLE_DIRS=/sonarr-blackhole,/radarr-blackhole
+      - HEALTH_PORT=6771
     volumes:
       - /opt/docker/sonarr/blackhole:/sonarr-blackhole
       - /opt/docker/radarr/blackhole:/radarr-blackhole
+    ports:
+      - 6771:6771
+    restart: unless-stopped
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
