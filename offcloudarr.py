@@ -6,7 +6,7 @@ import logging
 import bencodepy
 import threading
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from collections import deque
 
@@ -31,12 +31,12 @@ HEADERS = {
 # In-memory state
 sent_hashes = set()
 activity_log = deque(maxlen=50)
-start_time = datetime.utcnow()
+start_time = datetime.now(timezone.utc)
 
 
 def log_activity(event_type, filename, message, offcloud_response=None):
     entry = {
-        'time': datetime.utcnow().isoformat(),
+        'time': datetime.now(timezone.utc).isoformat(),
         'type': event_type,  # 'sent', 'duplicate', 'error', 'skipped'
         'filename': filename,
         'message': message,
@@ -239,7 +239,7 @@ __ACTIVITY__
 
 
 def format_uptime():
-    delta = datetime.utcnow() - start_time
+    delta = datetime.now(timezone.utc) - start_time
     hours, remainder = divmod(int(delta.total_seconds()), 3600)
     minutes, seconds = divmod(remainder, 60)
     if hours > 0:
