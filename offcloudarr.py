@@ -22,6 +22,9 @@ HEADERS = {
     'Content-Type': 'application/json'
 }
 
+# In-memory cache of hashes sent in this session
+sent_hashes = set()
+
 
 def get_offcloud_history():
     response = requests.get(OFFCLOUD_HISTORY_URL, headers=HEADERS)
@@ -37,10 +40,17 @@ def extract_info_hash_from_magnet(magnet):
 
 
 def is_duplicate(magnet):
+    hash_to_check = extract_info_hash_from_magnet(magnet)
+    if not hash_to_check:
+        return False
+
+    # Check in-memory session cache first
+    if hash_to_check in sent_hashes:
+        logging.warning(f'Duplicate detected — already sent in this session: {hash_to_check}')
+        return True
+
+    # Check Offcloud history
     try:
-        hash_to_check = extract_info_hash_from_magnet(magnet)
-        if not hash_to_check:
-            return False
         history = get_offcloud_history()
         for item in history:
             existing_link = item.get('originalLink', '')
@@ -50,6 +60,7 @@ def is_duplicate(magnet):
                 return True
     except Exception as e:
         logging.error(f'Error checking Offcloud history: {e}')
+
     return False
 
 
@@ -91,6 +102,11 @@ def process_magnet_file(filepath):
     logging.info(f'Sending to Offcloud: {filepath}')
     result = send_to_offcloud(magnet)
     logging.info(f'Offcloud response: {result}')
+
+    info_hash = extract_info_hash_from_magnet(magnet)
+    if info_hash:
+        sent_hashes.add(info_hash)
+
     move_to_processed(filepath)
 
 
@@ -107,6 +123,11 @@ def process_torrent_file(filepath):
     logging.info(f'Sending to Offcloud: {filepath}')
     result = send_to_offcloud(magnet)
     logging.info(f'Offcloud response: {result}')
+
+    info_hash = extract_info_hash_from_magnet(magnet)
+    if info_hash:
+        sent_hashes.add(info_hash)
+
     move_to_processed(filepath)
 
 
