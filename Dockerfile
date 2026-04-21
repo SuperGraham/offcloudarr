@@ -2,7 +2,7 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-RUN pip install requests torf --no-cache-dir
+RUN pip install requests bencodepy --no-cache-dir
 
 COPY offcloudarr.py .
 

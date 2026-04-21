@@ -1,8 +1,9 @@
 import os
 import time
+import hashlib
 import requests
 import logging
-import torf
+import bencodepy
 
 logging.basicConfig(
     level=logging.INFO,
@@ -14,6 +15,18 @@ OFFCLOUD_API_KEY = os.environ.get('OFFCLOUD_API_KEY')
 OFFCLOUD_STORAGE = os.environ.get('OFFCLOUD_STORAGE', 'cloud').lower()
 OFFCLOUD_API_URL = f'https://offcloud.com/api/{OFFCLOUD_STORAGE}'
 POLL_INTERVAL = int(os.environ.get('POLL_INTERVAL', '10'))
+
+
+def torrent_to_magnet(filepath):
+    with open(filepath, 'rb') as f:
+        torrent_data = bencodepy.decode(f.read())
+    info = torrent_data[b'info']
+    info_hash = hashlib.sha1(bencodepy.encode(info)).hexdigest()
+    name = info.get(b'name', b'').decode('utf-8', errors='ignore')
+    magnet = f'magnet:?xt=urn:btih:{info_hash}'
+    if name:
+        magnet += f'&dn={requests.utils.quote(name)}'
+    return magnet
 
 
 def send_to_offcloud(magnet):
@@ -45,8 +58,8 @@ def process_magnet_file(filepath):
 
 def process_torrent_file(filepath):
     logging.info(f'Converting torrent to magnet: {filepath}')
-    t = torf.Torrent.read(filepath)
-    magnet = str(t.magnet())
+    magnet = torrent_to_magnet(filepath)
+    logging.info(f'Magnet: {magnet}')
     logging.info(f'Sending to Offcloud: {filepath}')
     result = send_to_offcloud(magnet)
     logging.info(f'Offcloud response: {result}')
