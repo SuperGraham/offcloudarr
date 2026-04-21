@@ -1,13 +1,13 @@
 # Offcloudarr
 
-A lightweight Docker container that watches blackhole folders used by Sonarr and Radarr, picks up `.magnet` files, and automatically forwards them to [Offcloud](https://offcloud.com) for downloading.
+A lightweight Docker container that watches blackhole folders used by Sonarr and Radarr, picks up `.magnet` and `.torrent` files, and automatically forwards them to [Offcloud](https://offcloud.com) for downloading.
 
 ## How It Works
 
-1. Sonarr or Radarr grabs a release and writes a `.magnet` file to a blackhole folder
-2. Offcloudarr detects the file within 10 seconds, configurable using the POLL_INTERVAL variable
-3. The magnet link is sent to Offcloud via its API
-4. The `.magnet` file is moved to a `processed/` subfolder
+1. Sonarr or Radarr grabs a release and writes a `.magnet` or `.torrent` file to a blackhole folder
+2. Offcloudarr detects the file within 10 seconds by default (configurable via `POLL_INTERVAL`)
+3. The magnet link is sent to Offcloud via its API (`.torrent` files are automatically converted to magnet links)
+4. The file is moved to a `processed/` subfolder
 5. Offcloud downloads the content to your storage
 
 ## Prerequisites
@@ -59,7 +59,6 @@ services:
   offcloudarr:
     image: supergraham/offcloudarr:latest
     container_name: offcloudarr
-    restart: unless-stopped
     environment:
       - TZ=UTC
       - OFFCLOUD_API_KEY=YOUR_OFFCLOUD_API_KEY
@@ -69,6 +68,7 @@ services:
     volumes:
       - /opt/docker/sonarr/blackhole:/sonarr-blackhole
       - /opt/docker/radarr/blackhole:/radarr-blackhole
+    restart: unless-stopped
 ```
 
 ## Environment Variables
