@@ -204,33 +204,33 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
 <div class="grid">
   <div class="card">
     <div class="card-label">Sent This Session</div>
-    <div class="card-value green">{sent_count}</div>
+    <div class="card-value green">__SENT__</div>
   </div>
   <div class="card">
     <div class="card-label">Duplicates Skipped</div>
-    <div class="card-value yellow">{duplicate_count}</div>
+    <div class="card-value yellow">__DUPLICATES__</div>
   </div>
   <div class="card">
     <div class="card-label">Errors</div>
-    <div class="card-value red">{error_count}</div>
+    <div class="card-value red">__ERRORS__</div>
   </div>
   <div class="card">
     <div class="card-label">Uptime</div>
-    <div class="card-value">{uptime}</div>
+    <div class="card-value">__UPTIME__</div>
   </div>
 </div>
 
 <div class="section-title">Configuration</div>
 <div class="config-grid">
-  <div class="config-item"><span class="config-key">Storage</span><span class="config-val">{storage}</span></div>
-  <div class="config-item"><span class="config-key">Poll Interval</span><span class="config-val">{poll_interval}s</span></div>
-  <div class="config-item"><span class="config-key">Health Port</span><span class="config-val">{health_port}</span></div>
-  <div class="config-item"><span class="config-key">Blackhole Dirs</span><span class="config-val">{blackhole_dirs}</span></div>
+  <div class="config-item"><span class="config-key">Storage</span><span class="config-val">__STORAGE__</span></div>
+  <div class="config-item"><span class="config-key">Poll Interval</span><span class="config-val">__POLL_INTERVAL__s</span></div>
+  <div class="config-item"><span class="config-key">Web Port</span><span class="config-val">__WEB_PORT__</span></div>
+  <div class="config-item"><span class="config-key">Blackhole Dirs</span><span class="config-val">__BLACKHOLE_DIRS__</span></div>
 </div>
 
 <div class="section-title">Recent Activity</div>
 <div class="activity-list">
-{activity_rows}
+__ACTIVITY__
 </div>
 <div class="auto-refresh">Auto-refreshes every 10 seconds</div>
 <script>setTimeout(() => location.reload(), 10000);</script>
@@ -269,17 +269,17 @@ def render_html():
     if not rows:
         rows = ['<div class="empty">No activity yet</div>']
 
-    return HTML_TEMPLATE.format(
-        sent_count=sent_count,
-        duplicate_count=duplicate_count,
-        error_count=error_count,
-        uptime=format_uptime(),
-        storage=OFFCLOUD_STORAGE,
-        poll_interval=POLL_INTERVAL,
-        health_port=WEB_PORT,
-        blackhole_dirs='<br>'.join(BLACKHOLE_DIRS),
-        activity_rows='\n'.join(rows)
-    )
+    html = HTML_TEMPLATE
+    html = html.replace('__SENT__', str(sent_count))
+    html = html.replace('__DUPLICATES__', str(duplicate_count))
+    html = html.replace('__ERRORS__', str(error_count))
+    html = html.replace('__UPTIME__', format_uptime())
+    html = html.replace('__STORAGE__', OFFCLOUD_STORAGE)
+    html = html.replace('__POLL_INTERVAL__', str(POLL_INTERVAL))
+    html = html.replace('__WEB_PORT__', str(WEB_PORT))
+    html = html.replace('__BLACKHOLE_DIRS__', '<br>'.join(BLACKHOLE_DIRS))
+    html = html.replace('__ACTIVITY__', '\n'.join(rows))
+    return html
 
 
 class WebHandler(BaseHTTPRequestHandler):
