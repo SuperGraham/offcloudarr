@@ -8,7 +8,6 @@ services:
       - OFFCLOUD_STORAGE=cloud
       - POLL_INTERVAL=10
       - BLACKHOLE_DIRS=/sonarr-blackhole,/radarr-blackhole
-      - HEALTH_PORT=6771
     volumes:
       - /opt/docker/sonarr/blackhole:/sonarr-blackhole
       - /opt/docker/radarr/blackhole:/radarr-blackhole
