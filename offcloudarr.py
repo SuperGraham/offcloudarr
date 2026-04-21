@@ -2,6 +2,7 @@ import os
 import time
 import requests
 import logging
+import torf
 
 logging.basicConfig(
     level=logging.INFO,
@@ -39,8 +40,20 @@ def process_magnet_file(filepath):
     logging.info(f'Sending to Offcloud: {filepath}')
     result = send_to_offcloud(magnet)
     logging.info(f'Offcloud response: {result}')
+    move_to_processed(filepath)
 
-    # Move to processed folder within the same blackhole directory
+
+def process_torrent_file(filepath):
+    logging.info(f'Converting torrent to magnet: {filepath}')
+    t = torf.Torrent.read(filepath)
+    magnet = str(t.magnet())
+    logging.info(f'Sending to Offcloud: {filepath}')
+    result = send_to_offcloud(magnet)
+    logging.info(f'Offcloud response: {result}')
+    move_to_processed(filepath)
+
+
+def move_to_processed(filepath):
     processed_dir = os.path.join(os.path.dirname(filepath), 'processed')
     os.makedirs(processed_dir, exist_ok=True)
     processed_path = os.path.join(processed_dir, os.path.basename(filepath))
@@ -51,18 +64,20 @@ def process_magnet_file(filepath):
 def watch():
     for blackhole_dir in BLACKHOLE_DIRS:
         os.makedirs(blackhole_dir, exist_ok=True)
-        logging.info(f'Watching {blackhole_dir} for magnet files...')
+        logging.info(f'Watching {blackhole_dir} for magnet and torrent files...')
 
     while True:
         for blackhole_dir in BLACKHOLE_DIRS:
             try:
                 for filename in os.listdir(blackhole_dir):
-                    if filename.endswith('.magnet'):
-                        filepath = os.path.join(blackhole_dir, filename)
-                        try:
+                    filepath = os.path.join(blackhole_dir, filename)
+                    try:
+                        if filename.endswith('.magnet'):
                             process_magnet_file(filepath)
-                        except Exception as e:
-                            logging.error(f'Error processing {filepath}: {e}')
+                        elif filename.endswith('.torrent'):
+                            process_torrent_file(filepath)
+                    except Exception as e:
+                        logging.error(f'Error processing {filepath}: {e}')
             except Exception as e:
                 logging.error(f'Error watching {blackhole_dir}: {e}')
         time.sleep(POLL_INTERVAL)
