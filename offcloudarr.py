@@ -317,20 +317,21 @@ class WebHandler(BaseHTTPRequestHandler):
             body = self.rfile.read(content_length)
             try:
                 payload = json.loads(body)
-                logging.info(f'Webhook payload: {json.dumps(payload)}')
                 event_type = payload.get('eventType', '')
                 if event_type == 'Grab':
-                    # Try Radarr format first, then Sonarr
                     release = payload.get('release', {})
                     magnet = release.get('magnetUrl') or release.get('downloadUrl', '')
-                    title = (payload.get('movie', {}).get('title')
-                             or payload.get('series', {}).get('title', 'Unknown'))
-                    episode = payload.get('episodes', [{}])
-                    if episode:
-                        ep = episode[0]
-                        filename = f'{title} S{ep.get("seasonNumber", 0):02d}E{ep.get("episodeNumber", 0):02d}'
+                    # Radarr uses 'movie', Sonarr uses 'series' + 'episodes'
+                    movie = payload.get('movie', {})
+                    series = payload.get('series', {})
+                    episodes = payload.get('episodes', [])
+                    if movie:
+                        filename = f'{movie.get("title", "Unknown")} ({movie.get("year", "")})'
+                    elif series and episodes:
+                        ep = episodes[0]
+                        filename = f'{series.get("title", "Unknown")} S{ep.get("seasonNumber", 0):02d}E{ep.get("episodeNumber", 0):02d}'
                     else:
-                        filename = title
+                        filename = release.get('releaseTitle', 'Unknown')
 
                     if magnet and magnet.startswith('magnet:'):
                         threading.Thread(
@@ -340,7 +341,7 @@ class WebHandler(BaseHTTPRequestHandler):
                         ).start()
                         self.send_response(200)
                     else:
-                        logging.warning(f'Webhook received but no magnet link found for: {filename}')
+                        logging.info(f'Webhook grab received for: {filename} (no magnet link in payload — blackhole will handle it)')
                         self.send_response(200)
                 else:
                     self.send_response(200)
