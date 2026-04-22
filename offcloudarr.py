@@ -5,7 +5,6 @@ import requests
 import logging
 import bencodepy
 import threading
-import json
 from datetime import datetime, timezone
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from collections import deque
@@ -15,11 +14,10 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)s %(message)s'
 )
 
-BLACKHOLE_DIRS = os.environ.get('BLACKHOLE_DIRS', '/blackhole').split(',')
+BLACKHOLE_DIRS = [d for d in os.environ.get('BLACKHOLE_DIRS', '').split(',') if d.strip()]
 OFFCLOUD_API_KEY = os.environ.get('OFFCLOUD_API_KEY')
 OFFCLOUD_STORAGE = os.environ.get('OFFCLOUD_STORAGE', 'cloud').lower()
 OFFCLOUD_API_URL = f'https://offcloud.com/api/{OFFCLOUD_STORAGE}'
-OFFCLOUD_HISTORY_URL = 'https://offcloud.com/api/cloud/history'
 POLL_INTERVAL = int(os.environ.get('POLL_INTERVAL', '10'))
 WEB_PORT = 6771
 
@@ -29,15 +27,15 @@ HEADERS = {
 }
 
 # In-memory state
-sent_hashes = set()
 activity_log = deque(maxlen=50)
 start_time = datetime.now(timezone.utc)
+blackhole_enabled = False
 
 
 def log_activity(event_type, filename, message, offcloud_response=None):
     entry = {
         'time': datetime.now(timezone.utc).isoformat(),
-        'type': event_type,  # 'sent', 'duplicate', 'error', 'skipped'
+        'type': event_type,
         'filename': filename,
         'message': message,
         'response': offcloud_response
@@ -103,6 +101,10 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
     background: var(--green);
     color: #000;
   }
+  .badge.off {
+    background: var(--muted);
+    color: var(--bg);
+  }
   .grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -130,7 +132,6 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
   }
   .card-value.green { color: var(--green); }
   .card-value.red { color: var(--red); }
-  .card-value.yellow { color: var(--yellow); }
   .section-title {
     font-family: var(--sans);
     font-size: 0.75rem;
@@ -173,7 +174,6 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
     font-size: 0.8rem;
   }
   .activity-item.sent { border-left-color: var(--green); }
-  .activity-item.duplicate { border-left-color: var(--yellow); }
   .activity-item.error { border-left-color: var(--red); }
   .activity-item.skipped { border-left-color: var(--muted); }
   .activity-time { color: var(--muted); white-space: nowrap; font-size: 0.7rem; }
@@ -189,7 +189,6 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
     white-space: nowrap;
   }
   .pill.sent { background: rgba(74,247,160,0.15); color: var(--green); }
-  .pill.duplicate { background: rgba(247,224,74,0.15); color: var(--yellow); }
   .pill.error { background: rgba(247,74,106,0.15); color: var(--red); }
   .pill.skipped { background: rgba(90,90,122,0.15); color: var(--muted); }
   .empty { color: var(--muted); font-size: 0.8rem; padding: 2rem; text-align: center; }
@@ -199,17 +198,13 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
 <body>
 <header>
   <h1>Offcloudarr</h1>
-  <span class="badge">Running</span>
+  <span class="badge __BLACKHOLE_BADGE__">Blackhole __BLACKHOLE_STATUS__</span>
 </header>
 
 <div class="grid">
   <div class="card">
     <div class="card-label">Sent This Session</div>
     <div class="card-value green">__SENT__</div>
-  </div>
-  <div class="card">
-    <div class="card-label">Duplicates Skipped</div>
-    <div class="card-value yellow">__DUPLICATES__</div>
   </div>
   <div class="card">
     <div class="card-label">Errors</div>
@@ -252,7 +247,6 @@ def format_uptime():
 
 def render_html():
     sent_count = sum(1 for e in activity_log if e['type'] == 'sent')
-    duplicate_count = sum(1 for e in activity_log if e['type'] == 'duplicate')
     error_count = sum(1 for e in activity_log if e['type'] == 'error')
 
     rows = []
@@ -261,7 +255,7 @@ def render_html():
         pill = f'<span class="pill {entry["type"]}">{entry["type"]}</span>'
         name = entry['filename']
         msg = f'<div class="activity-msg">{entry["message"]}</div>' if entry['message'] else ''
-        rows.append(f'''<div class="activity-item {entry['type']}">
+        rows.append(f'''<div class="activity-item {entry["type"]}">
           <span class="activity-time">{t}</span>
           <div><div class="activity-name">{name}</div>{msg}</div>
           {pill}
@@ -272,14 +266,15 @@ def render_html():
 
     html = HTML_TEMPLATE
     html = html.replace('__SENT__', str(sent_count))
-    html = html.replace('__DUPLICATES__', str(duplicate_count))
     html = html.replace('__ERRORS__', str(error_count))
     html = html.replace('__UPTIME__', format_uptime())
     html = html.replace('__STORAGE__', OFFCLOUD_STORAGE)
     html = html.replace('__POLL_INTERVAL__', str(POLL_INTERVAL))
     html = html.replace('__WEB_PORT__', str(WEB_PORT))
-    html = html.replace('__BLACKHOLE_DIRS__', '<br>'.join(BLACKHOLE_DIRS))
+    html = html.replace('__BLACKHOLE_DIRS__', '<br>'.join(BLACKHOLE_DIRS) if BLACKHOLE_DIRS else 'Not configured')
     html = html.replace('__ACTIVITY__', '\n'.join(rows))
+    html = html.replace('__BLACKHOLE_STATUS__', 'Active' if blackhole_enabled else 'Inactive')
+    html = html.replace('__BLACKHOLE_BADGE__', '' if blackhole_enabled else 'off')
     return html
 
 
@@ -309,42 +304,6 @@ def start_web_server():
     server = HTTPServer(('0.0.0.0', WEB_PORT), WebHandler)
     logging.info(f'Web UI and health check available on port {WEB_PORT}')
     server.serve_forever()
-
-
-def get_offcloud_history():
-    response = requests.get(OFFCLOUD_HISTORY_URL, headers=HEADERS)
-    response.raise_for_status()
-    return response.json()
-
-
-def extract_info_hash_from_magnet(magnet):
-    for part in magnet.split('&'):
-        if part.startswith('magnet:?xt=urn:btih:') or part.startswith('xt=urn:btih:'):
-            return part.split(':')[-1].lower()
-    return None
-
-
-def is_duplicate(magnet):
-    hash_to_check = extract_info_hash_from_magnet(magnet)
-    if not hash_to_check:
-        return False
-
-    if hash_to_check in sent_hashes:
-        logging.warning(f'Duplicate detected — already sent in this session: {hash_to_check}')
-        return True
-
-    try:
-        history = get_offcloud_history()
-        for item in history:
-            existing_link = item.get('originalLink', '')
-            existing_hash = extract_info_hash_from_magnet(existing_link)
-            if existing_hash and existing_hash.lower() == hash_to_check.lower():
-                logging.warning(f'Duplicate detected — already in Offcloud: {item.get("fileName", "")}')
-                return True
-    except Exception as e:
-        logging.error(f'Error checking Offcloud history: {e}')
-
-    return False
 
 
 def torrent_to_magnet(filepath):
@@ -377,47 +336,24 @@ def process_magnet_file(filepath):
     if not magnet.startswith('magnet:'):
         logging.warning(f'Skipping {filepath} - does not contain a magnet link')
         log_activity('skipped', filename, 'Not a valid magnet link')
-        return
-
-    if is_duplicate(magnet):
-        logging.warning(f'Skipping duplicate: {filepath}')
-        log_activity('duplicate', filename, 'Already exists in Offcloud or sent this session')
         move_to_processed(filepath)
         return
 
-    logging.info(f'Sending to Offcloud: {filepath}')
+    logging.info(f'Sending to Offcloud: {filename}')
     result = send_to_offcloud(magnet)
     logging.info(f'Offcloud response: {result}')
     log_activity('sent', filename, f'Offcloud: {result.get("fileName", "")}', result)
-
-    info_hash = extract_info_hash_from_magnet(magnet)
-    if info_hash:
-        sent_hashes.add(info_hash)
-
     move_to_processed(filepath)
 
 
 def process_torrent_file(filepath):
     filename = os.path.basename(filepath)
-    logging.info(f'Converting torrent to magnet: {filepath}')
+    logging.info(f'Converting torrent to magnet: {filename}')
     magnet = torrent_to_magnet(filepath)
-    logging.info(f'Magnet: {magnet}')
-
-    if is_duplicate(magnet):
-        logging.warning(f'Skipping duplicate: {filepath}')
-        log_activity('duplicate', filename, 'Already exists in Offcloud or sent this session')
-        move_to_processed(filepath)
-        return
-
-    logging.info(f'Sending to Offcloud: {filepath}')
+    logging.info(f'Sending to Offcloud: {filename}')
     result = send_to_offcloud(magnet)
     logging.info(f'Offcloud response: {result}')
     log_activity('sent', filename, f'Offcloud: {result.get("fileName", "")}', result)
-
-    info_hash = extract_info_hash_from_magnet(magnet)
-    if info_hash:
-        sent_hashes.add(info_hash)
-
     move_to_processed(filepath)
 
 
@@ -429,13 +365,21 @@ def move_to_processed(filepath):
     logging.info(f'Moved to processed: {processed_path}')
 
 
-def watch():
-    for blackhole_dir in BLACKHOLE_DIRS:
-        os.makedirs(blackhole_dir, exist_ok=True)
-        logging.info(f'Watching {blackhole_dir} for magnet and torrent files...')
+def check_blackhole_dirs():
+    accessible = []
+    for d in BLACKHOLE_DIRS:
+        if os.path.isdir(d):
+            accessible.append(d)
+            logging.info(f'Blackhole folder found: {d}')
+        else:
+            logging.warning(f'Blackhole folder not found, skipping: {d}')
+    return accessible
 
+
+def watch(dirs):
+    logging.info('Blackhole polling active')
     while True:
-        for blackhole_dir in BLACKHOLE_DIRS:
+        for blackhole_dir in dirs:
             try:
                 for filename in os.listdir(blackhole_dir):
                     filepath = os.path.join(blackhole_dir, filename)
@@ -459,4 +403,13 @@ if __name__ == '__main__':
     web_thread = threading.Thread(target=start_web_server, daemon=True)
     web_thread.start()
 
-    watch()
+    accessible_dirs = check_blackhole_dirs()
+    if accessible_dirs:
+        blackhole_enabled = True
+        watch_thread = threading.Thread(target=watch, args=(accessible_dirs,), daemon=True)
+        watch_thread.start()
+    else:
+        logging.info('No blackhole folders configured or accessible — polling disabled')
+
+    while True:
+        time.sleep(60)
