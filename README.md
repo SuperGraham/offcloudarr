@@ -7,9 +7,8 @@ A lightweight Docker container that watches blackhole folders used by Sonarr and
 1. Sonarr or Radarr grabs a release and writes a `.magnet` or `.torrent` file to a blackhole folder
 2. Offcloudarr detects the file within 10 seconds by default (configurable via `POLL_INTERVAL`)
 3. The magnet link is sent to Offcloud via its API (`.torrent` files are automatically converted to magnet links)
-4. Duplicate detection checks both the current session and Offcloud history to avoid sending the same file twice
-5. The file is moved to a `processed/` subfolder
-6. Offcloud downloads the content to your storage
+4. The file is moved to a `processed/` subfolder
+5. Offcloud downloads the content to your storage
 
 ## Prerequisites
 
@@ -78,7 +77,8 @@ services:
 
 Offcloudarr includes a built-in web UI available at `http://<host>:6771` showing:
 
-- Activity log — what was sent, duplicates skipped, and errors
+- Version number and blackhole status
+- Activity log — what was sent, duplicates detected, and errors
 - Session stats — sent count, duplicates, errors, and uptime
 - Configuration — storage type, poll interval, blackhole directories
 
@@ -90,8 +90,8 @@ The `/health` endpoint at `http://<host>:6771/health` is used by Docker for cont
 |---|---|---|---|
 | `OFFCLOUD_API_KEY` | Yes | — | Your Offcloud API key |
 | `OFFCLOUD_STORAGE` | No | `cloud` | Storage destination: `cloud` for Offcloud cloud storage, `remote` for remote storage (e.g. Google Drive). Using `remote` is currently not supported — leave this configured as `cloud` until Offcloud adds this to their API |
-| `BLACKHOLE_DIRS` | No | `/blackhole` | Comma-separated list of blackhole directories to watch. For example `BLACKHOLE_DIRS=/sonarr-blackhole,/radarr-blackhole` |
-| `POLL_INTERVAL` | No | `10` | How often in seconds to check blackhole folders for new magnet files |
+| `BLACKHOLE_DIRS` | No | — | Comma-separated list of blackhole directories to watch. If not set, blackhole polling is disabled. For example `BLACKHOLE_DIRS=/sonarr-blackhole,/radarr-blackhole` |
+| `POLL_INTERVAL` | No | `10` | How often in seconds to check blackhole folders for new files |
 | `TZ` | No | UTC | Timezone for log timestamps |
 
 ## Updating
@@ -114,4 +114,4 @@ docker logs offcloudarr
 
 ## Processed Files
 
-Successfully sent magnet files are moved to a `processed/` subfolder within each blackhole directory, e.g. `/opt/docker/radarr/blackhole/processed/`.
+Successfully sent files are moved to a `processed/` subfolder within each blackhole directory, e.g. `/opt/docker/radarr/blackhole/processed/`.

@@ -442,6 +442,15 @@ if __name__ == '__main__':
     if not OFFCLOUD_API_KEY:
         raise RuntimeError('OFFCLOUD_API_KEY environment variable is not set')
 
+    banner = r"""
+  ___  __  __      _                _
+ / _ \/ _|/ _|    | |              | |
+| | | | |_| |_ ___| | ___  _   _  | | __ _ _ __ _ __
+| | | |  _|  _/ __| |/ _ \| | | | | |/ _` | '__| '__|
+| |_| | | | || (__| | (_) | |_| | | | (_| | |  | |
+ \___/|_| |_| \___|_|\___/ \__,_| |_|\__,_|_|  |_|
+"""
+    print(banner)
     logging.info(f'Offcloudarr v{VERSION} starting')
 
     web_thread = threading.Thread(target=start_web_server, daemon=True)
