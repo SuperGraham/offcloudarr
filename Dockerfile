@@ -9,7 +9,8 @@ RUN pip install requests bencodepy --no-cache-dir
 COPY VERSION .
 COPY offcloudarr.py .
 
-RUN VERSION=$(cat VERSION) && echo "VERSION=$VERSION" > /etc/offcloudarr_version
+ARG VERSION=unknown
+LABEL org.opencontainers.image.version=$VERSION
 
 EXPOSE 6771
 
