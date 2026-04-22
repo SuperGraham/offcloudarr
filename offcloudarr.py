@@ -317,6 +317,7 @@ class WebHandler(BaseHTTPRequestHandler):
             body = self.rfile.read(content_length)
             try:
                 payload = json.loads(body)
+                logging.info(f'Webhook payload: {json.dumps(payload)}')
                 event_type = payload.get('eventType', '')
                 if event_type == 'Grab':
                     # Try Radarr format first, then Sonarr
