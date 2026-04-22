@@ -15,7 +15,7 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)s %(message)s'
 )
 
-BLACKHOLE_DIRS = os.environ.get('BLACKHOLE_DIRS', '/blackhole').split(',')
+BLACKHOLE_DIRS = [d for d in os.environ.get('BLACKHOLE_DIRS', '').split(',') if d.strip()]
 OFFCLOUD_API_KEY = os.environ.get('OFFCLOUD_API_KEY')
 OFFCLOUD_STORAGE = os.environ.get('OFFCLOUD_STORAGE', 'cloud').lower()
 OFFCLOUD_API_URL = f'https://offcloud.com/api/{OFFCLOUD_STORAGE}'
@@ -32,12 +32,14 @@ HEADERS = {
 sent_hashes = set()
 activity_log = deque(maxlen=50)
 start_time = datetime.now(timezone.utc)
+blackhole_enabled = False
+webhook_enabled = True
 
 
 def log_activity(event_type, filename, message, offcloud_response=None):
     entry = {
         'time': datetime.now(timezone.utc).isoformat(),
-        'type': event_type,  # 'sent', 'duplicate', 'error', 'skipped'
+        'type': event_type,
         'filename': filename,
         'message': message,
         'response': offcloud_response
@@ -102,6 +104,10 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
     border-radius: 2px;
     background: var(--green);
     color: #000;
+  }
+  .badge.off {
+    background: var(--muted);
+    color: var(--bg);
   }
   .grid {
     display: grid;
@@ -199,7 +205,8 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
 <body>
 <header>
   <h1>Offcloudarr</h1>
-  <span class="badge">Running</span>
+  <span class="badge">Webhook __WEBHOOK_STATUS__</span>
+  <span class="badge __BLACKHOLE_BADGE__">Blackhole __BLACKHOLE_STATUS__</span>
 </header>
 
 <div class="grid">
@@ -261,7 +268,7 @@ def render_html():
         pill = f'<span class="pill {entry["type"]}">{entry["type"]}</span>'
         name = entry['filename']
         msg = f'<div class="activity-msg">{entry["message"]}</div>' if entry['message'] else ''
-        rows.append(f'''<div class="activity-item {entry['type']}">
+        rows.append(f'''<div class="activity-item {entry["type"]}">
           <span class="activity-time">{t}</span>
           <div><div class="activity-name">{name}</div>{msg}</div>
           {pill}
@@ -278,8 +285,11 @@ def render_html():
     html = html.replace('__STORAGE__', OFFCLOUD_STORAGE)
     html = html.replace('__POLL_INTERVAL__', str(POLL_INTERVAL))
     html = html.replace('__WEB_PORT__', str(WEB_PORT))
-    html = html.replace('__BLACKHOLE_DIRS__', '<br>'.join(BLACKHOLE_DIRS))
+    html = html.replace('__BLACKHOLE_DIRS__', '<br>'.join(BLACKHOLE_DIRS) if BLACKHOLE_DIRS else 'Not configured')
     html = html.replace('__ACTIVITY__', '\n'.join(rows))
+    html = html.replace('__WEBHOOK_STATUS__', 'Active')
+    html = html.replace('__BLACKHOLE_STATUS__', 'Active' if blackhole_enabled else 'Inactive')
+    html = html.replace('__BLACKHOLE_BADGE__', '' if blackhole_enabled else 'off')
     return html
 
 
@@ -301,6 +311,46 @@ class WebHandler(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
 
+    def do_POST(self):
+        if self.path == '/webhook':
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_length)
+            try:
+                payload = json.loads(body)
+                event_type = payload.get('eventType', '')
+                if event_type == 'Grab':
+                    # Try Radarr format first, then Sonarr
+                    release = payload.get('release', {})
+                    magnet = release.get('magnetUrl') or release.get('downloadUrl', '')
+                    title = (payload.get('movie', {}).get('title')
+                             or payload.get('series', {}).get('title', 'Unknown'))
+                    episode = payload.get('episodes', [{}])
+                    if episode:
+                        ep = episode[0]
+                        filename = f'{title} S{ep.get("seasonNumber", 0):02d}E{ep.get("episodeNumber", 0):02d}'
+                    else:
+                        filename = title
+
+                    if magnet and magnet.startswith('magnet:'):
+                        threading.Thread(
+                            target=handle_magnet,
+                            args=(magnet, filename),
+                            daemon=True
+                        ).start()
+                        self.send_response(200)
+                    else:
+                        logging.warning(f'Webhook received but no magnet link found for: {filename}')
+                        self.send_response(200)
+                else:
+                    self.send_response(200)
+            except Exception as e:
+                logging.error(f'Webhook error: {e}')
+                self.send_response(500)
+            self.end_headers()
+        else:
+            self.send_response(404)
+            self.end_headers()
+
     def log_message(self, format, *args):
         pass
 
@@ -308,6 +358,7 @@ class WebHandler(BaseHTTPRequestHandler):
 def start_web_server():
     server = HTTPServer(('0.0.0.0', WEB_PORT), WebHandler)
     logging.info(f'Web UI and health check available on port {WEB_PORT}')
+    logging.info(f'Webhook endpoint active at /webhook')
     server.serve_forever()
 
 
@@ -369,6 +420,25 @@ def send_to_offcloud(magnet):
     return response.json()
 
 
+def handle_magnet(magnet, filename):
+    if is_duplicate(magnet):
+        logging.warning(f'Skipping duplicate: {filename}')
+        log_activity('duplicate', filename, 'Already exists in Offcloud or sent this session')
+        return
+
+    logging.info(f'Sending to Offcloud: {filename}')
+    try:
+        result = send_to_offcloud(magnet)
+        logging.info(f'Offcloud response: {result}')
+        log_activity('sent', filename, f'Offcloud: {result.get("fileName", "")}', result)
+        info_hash = extract_info_hash_from_magnet(magnet)
+        if info_hash:
+            sent_hashes.add(info_hash)
+    except Exception as e:
+        logging.error(f'Error sending to Offcloud: {e}')
+        log_activity('error', filename, str(e))
+
+
 def process_magnet_file(filepath):
     filename = os.path.basename(filepath)
     with open(filepath, 'r') as f:
@@ -379,21 +449,7 @@ def process_magnet_file(filepath):
         log_activity('skipped', filename, 'Not a valid magnet link')
         return
 
-    if is_duplicate(magnet):
-        logging.warning(f'Skipping duplicate: {filepath}')
-        log_activity('duplicate', filename, 'Already exists in Offcloud or sent this session')
-        move_to_processed(filepath)
-        return
-
-    logging.info(f'Sending to Offcloud: {filepath}')
-    result = send_to_offcloud(magnet)
-    logging.info(f'Offcloud response: {result}')
-    log_activity('sent', filename, f'Offcloud: {result.get("fileName", "")}', result)
-
-    info_hash = extract_info_hash_from_magnet(magnet)
-    if info_hash:
-        sent_hashes.add(info_hash)
-
+    handle_magnet(magnet, filename)
     move_to_processed(filepath)
 
 
@@ -402,22 +458,7 @@ def process_torrent_file(filepath):
     logging.info(f'Converting torrent to magnet: {filepath}')
     magnet = torrent_to_magnet(filepath)
     logging.info(f'Magnet: {magnet}')
-
-    if is_duplicate(magnet):
-        logging.warning(f'Skipping duplicate: {filepath}')
-        log_activity('duplicate', filename, 'Already exists in Offcloud or sent this session')
-        move_to_processed(filepath)
-        return
-
-    logging.info(f'Sending to Offcloud: {filepath}')
-    result = send_to_offcloud(magnet)
-    logging.info(f'Offcloud response: {result}')
-    log_activity('sent', filename, f'Offcloud: {result.get("fileName", "")}', result)
-
-    info_hash = extract_info_hash_from_magnet(magnet)
-    if info_hash:
-        sent_hashes.add(info_hash)
-
+    handle_magnet(magnet, filename)
     move_to_processed(filepath)
 
 
@@ -429,13 +470,21 @@ def move_to_processed(filepath):
     logging.info(f'Moved to processed: {processed_path}')
 
 
-def watch():
-    for blackhole_dir in BLACKHOLE_DIRS:
-        os.makedirs(blackhole_dir, exist_ok=True)
-        logging.info(f'Watching {blackhole_dir} for magnet and torrent files...')
+def check_blackhole_dirs():
+    accessible = []
+    for d in BLACKHOLE_DIRS:
+        if os.path.isdir(d):
+            accessible.append(d)
+            logging.info(f'Blackhole folder found: {d}')
+        else:
+            logging.warning(f'Blackhole folder not found, skipping: {d}')
+    return accessible
 
+
+def watch(dirs):
+    logging.info('Blackhole polling active')
     while True:
-        for blackhole_dir in BLACKHOLE_DIRS:
+        for blackhole_dir in dirs:
             try:
                 for filename in os.listdir(blackhole_dir):
                     filepath = os.path.join(blackhole_dir, filename)
@@ -456,7 +505,19 @@ if __name__ == '__main__':
     if not OFFCLOUD_API_KEY:
         raise RuntimeError('OFFCLOUD_API_KEY environment variable is not set')
 
+    # Start web server
     web_thread = threading.Thread(target=start_web_server, daemon=True)
     web_thread.start()
 
-    watch()
+    # Check blackhole dirs and start polling if any are accessible
+    accessible_dirs = check_blackhole_dirs()
+    if accessible_dirs:
+        blackhole_enabled = True
+        watch_thread = threading.Thread(target=watch, args=(accessible_dirs,), daemon=True)
+        watch_thread.start()
+    else:
+        logging.info('No blackhole folders configured or accessible — polling disabled, webhook only')
+
+    # Keep main thread alive
+    while True:
+        time.sleep(60)
