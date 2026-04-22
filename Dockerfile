@@ -6,7 +6,10 @@ RUN apt-get update && apt-get install -y curl --no-install-recommends && rm -rf 
 
 RUN pip install requests bencodepy --no-cache-dir
 
+COPY VERSION .
 COPY offcloudarr.py .
+
+RUN VERSION=$(cat VERSION) && echo "VERSION=$VERSION" > /etc/offcloudarr_version
 
 EXPOSE 6771
 

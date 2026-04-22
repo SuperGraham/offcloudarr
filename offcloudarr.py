@@ -21,6 +21,13 @@ OFFCLOUD_API_URL = f'https://offcloud.com/api/{OFFCLOUD_STORAGE}'
 POLL_INTERVAL = int(os.environ.get('POLL_INTERVAL', '10'))
 WEB_PORT = 6771
 
+# Read version from file baked into image
+try:
+    with open('/app/VERSION') as f:
+        VERSION = f.read().strip()
+except Exception:
+    VERSION = 'unknown'
+
 HEADERS = {
     'Authorization': f'Bearer {OFFCLOUD_API_KEY}',
     'Content-Type': 'application/json'
@@ -30,6 +37,7 @@ HEADERS = {
 activity_log = deque(maxlen=50)
 start_time = datetime.now(timezone.utc)
 blackhole_enabled = False
+seen_request_ids = set()
 
 
 def log_activity(event_type, filename, message, offcloud_response=None):
@@ -91,6 +99,11 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
   }
+  .version {
+    font-size: 0.7rem;
+    color: var(--muted);
+    font-family: var(--mono);
+  }
   .badge {
     font-size: 0.65rem;
     font-weight: 700;
@@ -132,6 +145,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
   }
   .card-value.green { color: var(--green); }
   .card-value.red { color: var(--red); }
+  .card-value.yellow { color: var(--yellow); }
   .section-title {
     font-family: var(--sans);
     font-size: 0.75rem;
@@ -174,6 +188,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
     font-size: 0.8rem;
   }
   .activity-item.sent { border-left-color: var(--green); }
+  .activity-item.duplicate { border-left-color: var(--yellow); }
   .activity-item.error { border-left-color: var(--red); }
   .activity-item.skipped { border-left-color: var(--muted); }
   .activity-time { color: var(--muted); white-space: nowrap; font-size: 0.7rem; }
@@ -189,6 +204,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
     white-space: nowrap;
   }
   .pill.sent { background: rgba(74,247,160,0.15); color: var(--green); }
+  .pill.duplicate { background: rgba(247,224,74,0.15); color: var(--yellow); }
   .pill.error { background: rgba(247,74,106,0.15); color: var(--red); }
   .pill.skipped { background: rgba(90,90,122,0.15); color: var(--muted); }
   .empty { color: var(--muted); font-size: 0.8rem; padding: 2rem; text-align: center; }
@@ -198,6 +214,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
 <body>
 <header>
   <h1>Offcloudarr</h1>
+  <span class="version">v__VERSION__</span>
   <span class="badge __BLACKHOLE_BADGE__">Blackhole __BLACKHOLE_STATUS__</span>
 </header>
 
@@ -205,6 +222,10 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
   <div class="card">
     <div class="card-label">Sent This Session</div>
     <div class="card-value green">__SENT__</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Duplicates</div>
+    <div class="card-value yellow">__DUPLICATES__</div>
   </div>
   <div class="card">
     <div class="card-label">Errors</div>
@@ -247,6 +268,7 @@ def format_uptime():
 
 def render_html():
     sent_count = sum(1 for e in activity_log if e['type'] == 'sent')
+    duplicate_count = sum(1 for e in activity_log if e['type'] == 'duplicate')
     error_count = sum(1 for e in activity_log if e['type'] == 'error')
 
     rows = []
@@ -265,7 +287,9 @@ def render_html():
         rows = ['<div class="empty">No activity yet</div>']
 
     html = HTML_TEMPLATE
+    html = html.replace('__VERSION__', VERSION)
     html = html.replace('__SENT__', str(sent_count))
+    html = html.replace('__DUPLICATES__', str(duplicate_count))
     html = html.replace('__ERRORS__', str(error_count))
     html = html.replace('__UPTIME__', format_uptime())
     html = html.replace('__STORAGE__', OFFCLOUD_STORAGE)
@@ -342,7 +366,16 @@ def process_magnet_file(filepath):
     logging.info(f'Sending to Offcloud: {filename}')
     result = send_to_offcloud(magnet)
     logging.info(f'Offcloud response: {result}')
-    log_activity('sent', filename, f'Offcloud: {result.get("fileName", "")}', result)
+
+    request_id = result.get('requestId')
+    if request_id and request_id in seen_request_ids:
+        logging.warning(f'Duplicate detected — already in Offcloud: {result.get("fileName", "")}')
+        log_activity('duplicate', filename, f'Already in Offcloud: {result.get("fileName", "")}', result)
+    else:
+        if request_id:
+            seen_request_ids.add(request_id)
+        log_activity('sent', filename, f'Offcloud: {result.get("fileName", "")}', result)
+
     move_to_processed(filepath)
 
 
@@ -353,7 +386,16 @@ def process_torrent_file(filepath):
     logging.info(f'Sending to Offcloud: {filename}')
     result = send_to_offcloud(magnet)
     logging.info(f'Offcloud response: {result}')
-    log_activity('sent', filename, f'Offcloud: {result.get("fileName", "")}', result)
+
+    request_id = result.get('requestId')
+    if request_id and request_id in seen_request_ids:
+        logging.warning(f'Duplicate detected — already in Offcloud: {result.get("fileName", "")}')
+        log_activity('duplicate', filename, f'Already in Offcloud: {result.get("fileName", "")}', result)
+    else:
+        if request_id:
+            seen_request_ids.add(request_id)
+        log_activity('sent', filename, f'Offcloud: {result.get("fileName", "")}', result)
+
     move_to_processed(filepath)
 
 
@@ -399,6 +441,8 @@ def watch(dirs):
 if __name__ == '__main__':
     if not OFFCLOUD_API_KEY:
         raise RuntimeError('OFFCLOUD_API_KEY environment variable is not set')
+
+    logging.info(f'Offcloudarr v{VERSION} starting')
 
     web_thread = threading.Thread(target=start_web_server, daemon=True)
     web_thread.start()
