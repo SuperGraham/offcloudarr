@@ -451,7 +451,9 @@ if __name__ == '__main__':
         "| |_| | | | || (__| | (_) | |_| | (_| | (_| | |  | |   \n"
         " \\___/|_| |_| \\___|_|\\___/ \\__,_|\\__,_|\\__,_|_|  |_|   \n"
         "\n"
+        "\n"
         "                        By SuperGraham\n"
+        "\n"
     )
     for line in banner.splitlines():
         if line.strip():
