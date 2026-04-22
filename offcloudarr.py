@@ -450,7 +450,9 @@ if __name__ == '__main__':
 | |_| | | | || (__| | (_) | |_| | | | (_| | |  | |
  \___/|_| |_| \___|_|\___/ \__,_| |_|\__,_|_|  |_|
 """
-    print(banner)
+    for line in banner.splitlines():
+        if line.strip():
+            logging.info(line)
     logging.info(f'Offcloudarr v{VERSION} starting')
 
     web_thread = threading.Thread(target=start_web_server, daemon=True)
