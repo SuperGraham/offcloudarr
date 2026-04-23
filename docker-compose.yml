@@ -3,7 +3,6 @@ services:
     image: supergraham/offcloudarr:latest
     container_name: offcloudarr
     environment:
-      - TZ=Asia/Riyadh
       - OFFCLOUD_API_KEY=YOUR_OFFCLOUD_API_KEY
       - OFFCLOUD_STORAGE=cloud
       - POLL_INTERVAL=10
@@ -14,5 +13,3 @@ services:
     ports:
       - 6771:6771
     restart: unless-stopped
-    labels:
-      - com.centurylinklabs.watchtower.enable=true
